@@ -1,0 +1,328 @@
+# encoding: utf-8
+
+
+import torch.nn as nn
+import torch
+
+
+class ResBlock1(nn.Module):
+    """残差模块"""
+
+    def __init__(self, inChannals, outChannals):
+        """初始化残差模块"""
+        super(ResBlock1, self).__init__()
+        self.conv1 = nn.Conv2d(inChannals, outChannals, kernel_size=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(outChannals)
+
+        self.conv2 = nn.Conv2d(outChannals, outChannals, kernel_size=1, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(outChannals)
+
+        self.conv3 = nn.Conv2d(outChannals, outChannals, kernel_size=3, bias=False)
+        self.bn3 = nn.BatchNorm2d(outChannals)
+        self.relu = nn.ReLU(inplace=False)
+
+    def forward(self, x):
+        """前向传播过程"""
+        resudial = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out += resudial
+        out = self.bn3(out)
+        out = self.relu(out)
+
+        return out
+
+
+class ResBlock2(nn.Module):
+    """残差模块"""
+
+    def __init__(self, inChannals, outChannals):
+        """初始化残差模块"""
+        super(ResBlock2, self).__init__()
+        self.conv1 = nn.Conv2d(inChannals, outChannals, kernel_size=3, bias=False)
+        self.bn1 = nn.BatchNorm2d(outChannals)
+
+        self.conv2 = nn.Conv2d(outChannals, outChannals*4, kernel_size=1, stride=1, padding=1, bias=False)
+        self.bn2 = nn.BatchNorm2d(outChannals)
+
+        self.conv3 = nn.Conv2d(outChannals, outChannals, kernel_size=3, bias=False)
+        self.bn3 = nn.BatchNorm2d(outChannals)
+        self.relu = nn.ReLU(inplace=False)
+        self.pixel =nn.PixelShuffle(2)
+    def forward(self, x):
+        """前向传播过程"""
+        resudial = x
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.pixel(out)
+        out = self.bn2(out)
+        out = self.relu(out)
+
+        out = self.conv3(out)
+        out += resudial
+        out = self.bn3(out)
+        out = self.relu(out)
+
+        return out
+
+
+class Recoverynet1(nn.Module):
+    def __init__(self, batchSize, output_function=nn.Sigmoid):
+        super(Recoverynet1, self).__init__()
+        # input is (3) x 256 x 256
+        self.rconv1 = nn.Conv2d(3, 16, kernel_size=(3, 3), stride=(1, 1), padding=1, padding_mode='reflect')
+        self.rbn1 = nn.BatchNorm2d(16)
+
+        self.rconv2 = nn.Conv2d(16, 16, kernel_size=(1, 1), stride=(1, 1), padding=0, padding_mode='reflect')
+        self.rbn2 = nn.BatchNorm2d(16)
+
+        self.rconv3 = nn.Conv2d(16, 32, kernel_size=(7, 7), stride=(1, 1), padding=3,
+                                padding_mode='reflect')
+        self.rbn3 = nn.BatchNorm2d(32)
+
+        self.rconv4 = nn.Conv2d(32, 96, kernel_size=(7, 7), stride=(1, 1), padding=1)
+        self.rbn4 = nn.BatchNorm2d(96)
+
+        self.rconv5 = nn.Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.rbn5 = nn.BatchNorm2d(96)
+
+        self.rconv6 = nn.Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.rbn6 = nn.BatchNorm2d(96)
+
+        self.rconv7 = nn.Conv2d(96, 96, kernel_size=(5, 5), stride=(1, 1), padding=2, padding_mode='reflect')
+        self.rbn7 = nn.BatchNorm2d(96)
+
+        self.rconv8 = nn.Conv2d(96, 64, kernel_size=(4, 4), stride=(2, 2), padding=1,
+                                padding_mode='reflect')
+        self.rbn8 = nn.BatchNorm2d(64)
+
+        self.rconv9 = nn.Conv2d(64, 96, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.rbn9 = nn.BatchNorm2d(96)
+
+        self.rconv10 = nn.Conv2d(96, 3, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.rbn10 = nn.BatchNorm2d(3)
+
+        self.resBlock1 = self._makeLayer_(ResBlock1, 96, 96, 4)
+        self.resBlock2 = self._makeLayer_(ResBlock2, 96, 96, 1)
+
+        self.tanh = nn.Tanh()
+        self.relu = nn.ReLU()
+        self.drop_path_prab = 0.0
+
+    def _makeLayer_(self, block, inChannals, outChannals, blocks):
+        """构建残差层"""
+        layers = []
+        layers.append(block(inChannals, outChannals))
+
+        for i in range(1, blocks):
+            layers.append(block(outChannals, outChannals))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        y = self.rconv1(x)
+        y = self.rbn1(y)
+        y = self.relu(y)
+
+        y = self.rconv2(y)
+        y = self.rbn2(y)
+        y = self.relu(y)
+
+        y = self.rconv3(y)
+        y = self.rbn3(y)
+        y = self.relu(y)
+
+        y = self.rconv4(y)
+        y = self.rbn4(y)
+        y = self.relu(y)
+
+        y = self.rconv5(y)
+        y = self.rbn5(y)
+        y = self.relu(y)
+
+        y = self.rconv6(y)
+        y = self.rbn6(y)
+        y = self.relu(y)
+
+        y = self.rconv7(y)
+        y = self.rbn7(y)
+        y = self.relu(y)
+        y0 = self.resBlock1(y)
+
+
+
+        y = self.rconv8(y)
+        y = self.rbn8(y)
+        y = self.relu(y)
+
+        y = self.rconv9(y)
+        y = self.rbn9(y)
+        y = self.relu(y)
+
+
+        y = self.rconv10(y)
+        y = self.rbn10(y)
+        y = self.relu(y)
+
+
+        return y,y0
+
+
+class Recoverynet2(nn.Module):
+    def __init__(self, batchSize, output_function=nn.Sigmoid):
+        super(Recoverynet2, self).__init__()
+
+        self.rconv11 = nn.Conv2d(3, 96, kernel_size=(7, 7), stride=(1, 1), padding=1)
+        self.rbn11 = nn.BatchNorm2d(96)
+
+        self.tconv1 = nn.Conv2d(192, 384, kernel_size=(3, 3), stride=(1, 1), padding=1, padding_mode='reflect')
+        self.tbn1 = nn.BatchNorm2d(96)
+
+        self.tconv2 = nn.Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=1, padding_mode='reflect')
+        self.tbn2 = nn.BatchNorm2d(96)
+
+        self.tconv3 = nn.Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=1, padding_mode='reflect')
+        self.tbn3 = nn.BatchNorm2d(96)
+
+        self.tconv4 = nn.Conv2d(96, 384, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn4 = nn.BatchNorm2d(384)
+
+        self.tconv5 = nn.Conv2d(96, 96, kernel_size=(5, 5), stride=(1, 1), padding=1)
+        self.tbn5 = nn.BatchNorm2d(96)
+
+        self.tconv6 = nn.Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn6 = nn.BatchNorm2d(96)
+        #
+        self.tconv7 = nn.Conv2d(96, 3, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn7 = nn.BatchNorm2d(3)
+
+        self.resBlock1 = self._makeLayer_(ResBlock1, 96, 96, 4)
+        self.resBlock2 = self._makeLayer_(ResBlock2, 96, 96, 1)
+        self.pixel = nn.PixelShuffle(2)
+        self.tanh = nn.Tanh()
+        self.relu = nn.ReLU()
+        self.drop_path_prab = 0.0
+
+    def _makeLayer_(self, block, inChannals, outChannals, blocks):
+        """构建残差层"""
+        layers = []
+        layers.append(block(inChannals, outChannals))
+
+        for i in range(1, blocks):
+            layers.append(block(outChannals, outChannals))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x,x1):
+
+        y = self.rconv11(x)
+        y = self.rbn11(y)
+        y = self.relu(y)
+        y = torch.cat([y,x1],dim=1)
+
+        y = self.tconv1(y)
+        y = self.pixel(y)
+        y = self.tbn1(y)
+        y = self.relu(y)
+
+        y = self.tconv2(y)
+        y = self.tbn2(y)
+        y = self.relu(y)
+
+        y = self.tconv3(y)
+        y = self.tbn3(y)
+        y = self.relu(y)
+        y0 = y = self.resBlock2(y)
+        y = self.tconv4(y)
+        y = self.pixel(y)
+        y = self.tbn4(y)
+        y = self.relu(y)
+
+        y = self.tconv5(y)
+        y = self.tbn5(y)
+        y = self.relu(y)
+
+        y = self.tconv6(y)
+        y = self.tbn6(y)
+        y = self.relu(y)
+
+        y = self.tconv7(y)
+        y = self.tbn7(y)
+        y = self.relu(y)
+
+        return y,y0
+
+
+class Recoverynet3(nn.Module):
+    def __init__(self, batchSize, output_function=nn.Sigmoid):
+        super(Recoverynet3, self).__init__()
+        #
+        self.tconv8 = nn.Conv2d(3, 96, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn8 = nn.BatchNorm2d(96)
+
+        self.tconv9 = nn.Conv2d(96, 96, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn9 = nn.BatchNorm2d(96)
+        #
+        self.tconv10 = nn.Conv2d(192, 64, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn10 = nn.BatchNorm2d(64)
+
+        self.tconv11 = nn.Conv2d(64, 64, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn11 = nn.BatchNorm2d(64)
+
+        self.tconv12 = nn.Conv2d(64, 3, kernel_size=(3, 3), stride=(1, 1), padding=1)
+        self.tbn12 = nn.BatchNorm2d(3)
+
+        self.resBlock1 = self._makeLayer_(ResBlock1, 96, 96, 4)
+        self.resBlock2 = self._makeLayer_(ResBlock2, 96, 96, 1)
+
+        self.tanh = nn.Tanh()
+        self.relu = nn.ReLU()
+        self.drop_path_prab = 0.0
+
+    def _makeLayer_(self, block, inChannals, outChannals, blocks):
+        """构建残差层"""
+        layers = []
+        layers.append(block(inChannals, outChannals))
+
+        for i in range(1, blocks):
+            layers.append(block(outChannals, outChannals))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x,x1):
+
+        y = self.tconv8(x)
+        y = self.tbn8(y)
+        y = self.relu(y)
+
+
+
+        y = self.tconv9(y)
+        y = self.tbn9(y)
+        y = self.relu(y)
+
+        y = torch.cat([y, x1], dim=1)
+
+        y = self.tconv10(y)
+        y = self.tbn10(y)
+        y = self.relu(y)
+
+        y = self.tconv11(y)
+        y = self.tbn11(y)
+        y = self.relu(y)
+
+        y = self.tconv12(y)
+        y = self.tbn12(y)
+        y = self.relu(y)
+
+        return y
